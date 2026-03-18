@@ -1,0 +1,179 @@
+@page "/"
+@using System.ComponentModel.DataAnnotations
+@using TinyURL.Ui.Models
+@using TinyURL.Ui.Validation
+@inject TinyURL.Ui.Services.TinyUrlApiClient Api
+
+<PageTitle>Home</PageTitle>
+
+<h1>TinyURL</h1>
+
+<p class="text-muted">Paste a long URL to generate a short link.</p>
+
+<div class="row g-4">
+    <div class="col-12 col-lg-6">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h2 class="h5 mb-3">Shorten a URL</h2>
+
+                <EditForm Model="_form" OnValidSubmit="ShortenAsync">
+                    <DataAnnotationsValidator />
+
+                    <div class="mb-2">
+                        <label class="form-label" for="urlInput">Long URL</label>
+                        <InputText id="urlInput"
+                                   class="form-control"
+                                   placeholder="https://example.com/some/long/path"
+                                   @bind-Value="_form.Url" />
+                        <ValidationMessage For="@(() => _form.Url)" />
+                    </div>
+
+                    <div class="d-flex gap-2 align-items-center">
+                        <button type="submit" class="btn btn-primary" disabled="@_isShortening">
+                            @_shortenButtonText
+                        </button>
+                        @if (!string.IsNullOrWhiteSpace(_shortenError))
+                        {
+                            <div class="text-danger small">@_shortenError</div>
+                        }
+                    </div>
+                </EditForm>
+
+                @if (_shortenResult is not null)
+                {
+                    <hr />
+                    <h3 class="h6 mb-2">Result</h3>
+
+                    <div class="d-flex flex-wrap gap-2 align-items-center">
+                        <span class="badge text-bg-success">Short URL</span>
+                        <a href="@_shortenResult.ShortUrl" target="_blank" rel="noopener noreferrer">
+                            @_shortenResult.ShortUrl
+                        </a>
+                        <span class="text-muted small">(@_shortenResult.ShortCode)</span>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-lg-6">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h2 class="h5 mb-0">All shortened URLs</h2>
+                    <button class="btn btn-outline-secondary btn-sm" @onclick="LoadUrlsAsync" disabled="@_isLoadingUrls">
+                        @_loadButtonText
+                    </button>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(_loadError))
+                {
+                    <div class="alert alert-danger py-2">@_loadError</div>
+                }
+
+                @if (_urls is null)
+                {
+                    <p class="text-muted mb-0"><em>Loading…</em></p>
+                }
+                else if (_urls.Count == 0)
+                {
+                    <p class="text-muted mb-0">No URLs yet. Shorten one to get started.</p>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle">
+                            <thead>
+                                <tr>
+                                    <th style="min-width: 180px;">Short</th>
+                                    <th style="min-width: 260px;">Original</th>
+                                    <th style="min-width: 160px;">Created</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in _urls)
+                                {
+                                    <tr>
+                                        <td>
+                                            <a href="@item.ShortUrl" target="_blank" rel="noopener noreferrer">
+                                                @item.ShortUrl
+                                            </a>
+                                        </td>
+                                        <td class="text-truncate" style="max-width: 360px;" title="@item.OriginalUrl">
+                                            @item.OriginalUrl
+                                        </td>
+                                        <td class="text-muted">@item.CreatedAt.LocalDateTime.ToString("g")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private readonly FormModel _form = new();
+
+    private bool _isShortening;
+    private string? _shortenError;
+    private ShortenUrlResponse? _shortenResult;
+
+    private bool _isLoadingUrls;
+    private string? _loadError;
+    private IReadOnlyList<UrlMappingDto>? _urls;
+
+    private string _shortenButtonText => _isShortening ? "Shortening…" : "Shorten";
+    private string _loadButtonText => _isLoadingUrls ? "Loading…" : "Load URLs";
+
+    protected override Task OnInitializedAsync() => LoadUrlsAsync();
+
+    private async Task ShortenAsync()
+    {
+        _shortenError = null;
+
+        try
+        {
+            _isShortening = true;
+            _shortenResult = await Api.ShortenAsync(_form.Url.Trim());
+            await LoadUrlsAsync();
+        }
+        catch (Exception ex)
+        {
+            _shortenError = ex.Message;
+        }
+        finally
+        {
+            _isShortening = false;
+        }
+    }
+
+    private async Task LoadUrlsAsync()
+    {
+        _loadError = null;
+
+        try
+        {
+            _isLoadingUrls = true;
+            _urls = await Api.GetUrlsAsync();
+        }
+        catch (Exception ex)
+        {
+            _loadError = ex.Message;
+            _urls = [];
+        }
+        finally
+        {
+            _isLoadingUrls = false;
+        }
+    }
+
+    private sealed class FormModel
+    {
+        [Required(ErrorMessage = "URL is required.")]
+        [HttpUrl(ErrorMessage = "URL must start with http:// or https://")]
+        public string Url { get; set; } = string.Empty;
+    }
+}
